@@ -113,6 +113,8 @@ Queue<Item>::Queue() :
 template<typename Item>
 Queue<Item>::~Queue() {
 	while(this->pop());
+	tail = &DUMMY;
+	__sync_synchronize();
 }
 
 template<typename Item>

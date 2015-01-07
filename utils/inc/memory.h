@@ -55,7 +55,7 @@ private:
 	MemoryNode* volatile reserved;
 
 public:
-	Memory();
+	Memory(unsigned int preAlllocatedSize = CACHE_LINE_SIZE * 64);
 	virtual ~Memory();
 
 	template<typename Type> void allocate(Type*& item);
@@ -113,8 +113,14 @@ void MemoryNode::reset() {
 	__sync_synchronize();
 }
 
-Memory::Memory() :
+Memory::Memory(unsigned int preAlllocatedSize) :
 		DUMMY(0), tail(&DUMMY), reserved(0) {
+	preAlllocatedSize += (unsigned int)((long long)sizeof(double) - 1);
+	unsigned int count = preAlllocatedSize / sizeof(double);
+	double** buffers = new double*[count];
+	for (int i = 0; i < count; ++i) this->allocate(buffers[i]);
+	for (int i = 0; i < count; ++i) this->deallocate(buffers[i]);
+	delete[] buffers;
 	__sync_synchronize();
 }
 
