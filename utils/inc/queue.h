@@ -75,7 +75,7 @@ bool QueueNode<Item>::push(Item* item) {
 		}
 
 		unsigned char tailOld = this->tail;
-		if (__sync_bool_compare_and_swap(&this->tail, tailOld, tailOld + 1)) {
+		if (0 == tailOld % 2 && __sync_bool_compare_and_swap(&this->tail, tailOld, tailOld + 1)) {
 			items[tailOld / 2] = item;
 			__sync_fetch_and_add(&this->tail, 1);
 			return true;

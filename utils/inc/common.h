@@ -9,5 +9,6 @@
 #define COMMON_H_
 
 #define CACHE_LINE_SIZE 64U * 8U
+#define MAX_ALIGNMENT 8U
 
 #endif /* COMMON_H_ */
