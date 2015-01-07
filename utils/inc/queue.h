@@ -8,12 +8,12 @@
 #ifndef INC_QUEUE_H_
 #define INC_QUEUE_H_
 
-#include "common.h"
+#include "memory.h"
 
 #include <strings.h>
 
 static const unsigned int __ITEM_COUNT = (CACHE_LINE_SIZE - sizeof(void*)
-		- 2 * sizeof(unsigned char)) / sizeof(void*);
+		- 2 * sizeof(unsigned short)) / sizeof(void*);
 static const unsigned int ITEM_COUNT = (0 == __ITEM_COUNT ? 1 : __ITEM_COUNT);
 
 template<typename Item>
@@ -24,11 +24,11 @@ class QueueNode {
 private:
 	Item* items[ITEM_COUNT];
 	QueueNode<Item>* volatile next;
-	volatile unsigned char head;
-	volatile unsigned char tail;
+	volatile unsigned short head;
+	volatile unsigned short tail;
 
 public:
-	inline QueueNode(QueueNode<Item>* next);
+	inline QueueNode();
 	inline virtual ~QueueNode();
 
 	inline bool push(Item* item);
@@ -52,8 +52,8 @@ public:
 };
 
 template<typename Item>
-QueueNode<Item>::QueueNode(QueueNode<Item>* next) :
-		next(next), head(0), tail(0) {
+QueueNode<Item>::QueueNode() :
+		next(0), head(0), tail(0) {
 	bzero(items, sizeof(items));
 	__sync_synchronize();
 }
@@ -74,8 +74,10 @@ bool QueueNode<Item>::push(Item* item) {
 			return false;
 		}
 
-		unsigned char tailOld = this->tail;
-		if (0 == tailOld % 2 && __sync_bool_compare_and_swap(&this->tail, tailOld, tailOld + 1)) {
+		unsigned short tailOld = this->tail;
+		if (0 == tailOld % 2
+				&& __sync_bool_compare_and_swap(&this->tail, tailOld,
+						tailOld + 1)) {
 			items[tailOld / 2] = item;
 			__sync_fetch_and_add(&this->tail, 1);
 			return true;
@@ -94,7 +96,7 @@ bool QueueNode<Item>::pop(Item*& item) {
 			}
 		}
 
-		unsigned char headOld = this->head;
+		unsigned short headOld = this->head;
 		if (__sync_bool_compare_and_swap(&this->head, headOld, headOld + 2)) {
 			item = items[headOld / 2];
 			return true;
@@ -104,7 +106,7 @@ bool QueueNode<Item>::pop(Item*& item) {
 
 template<typename Item>
 Queue<Item>::Queue() :
-		DUMMY(0), tail(&DUMMY) {
+		DUMMY(), tail(&DUMMY) {
 	__sync_synchronize();
 }
 
@@ -128,7 +130,7 @@ void Queue<Item>::push(Item* item) {
 
 		if (!tailOld->next) {
 			if (!tailNew) {
-				tailNew = new QueueNode<Item>(0);
+				tailNew = new QueueNode<Item>();
 			}
 			if (__sync_bool_compare_and_swap(&tailOld->next, 0, tailNew)) {
 				tailNew->push(item);

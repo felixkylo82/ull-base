@@ -8,7 +8,7 @@
 #ifndef COMMON_H_
 #define COMMON_H_
 
-#define CACHE_LINE_SIZE 64U * 8U
+#define CACHE_LINE_SIZE 64U * 16U
 #define MAX_ALIGNMENT 8U
 
 #endif /* COMMON_H_ */

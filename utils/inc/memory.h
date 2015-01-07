@@ -13,9 +13,10 @@
 #include <strings.h>
 #include <new>
 
-static const unsigned int BLOCK_SIZE =
-		(unsigned int) ((long long) CACHE_LINE_SIZE - sizeof(void*)
-				- 2 * sizeof(unsigned char)) / sizeof(void*);
+static const unsigned int _BLOCK_SIZE =
+		(unsigned int) ((long long) CACHE_LINE_SIZE - 3 * sizeof(void*));
+
+static const unsigned int BLOCK_SIZE = _BLOCK_SIZE / sizeof(void*) * sizeof(void*);
 
 class Memory;
 
@@ -80,7 +81,7 @@ bool MemoryNode::allocate(unsigned char*& address, unsigned int size) {
 	size += INFO_SIZE;
 
 	while (true) {
-		if (this->block + ITEM_COUNT <= this->tail + size) {
+		if (this->block + BLOCK_SIZE <= this->tail + size) {
 			address = 0;
 			return false;
 		}
@@ -118,14 +119,16 @@ Memory::Memory() :
 }
 
 Memory::~Memory() {
-	while(true) {
+	while (true) {
 		MemoryNode* reserved = this->reserved;
 		if (!reserved) {
 			__sync_synchronize();
+			if (!reserved) {
+				break;
+			}
 		}
 		__sync_bool_compare_and_swap(&this->reserved, reserved, reserved->next);
 		delete reserved;
-		reserved = 0;
 	}
 	this->tail = &DUMMY;
 	__sync_synchronize();
@@ -133,6 +136,11 @@ Memory::~Memory() {
 
 template<typename Type>
 void Memory::allocate(Type*& data) {
+	if (sizeof(Type) + INFO_SIZE > BLOCK_SIZE) {
+		data = new Type();
+		return;
+	}
+
 	MemoryNode* tailNew = 0;
 	while (true) {
 		MemoryNode* tailOld = this->tail;
@@ -163,6 +171,12 @@ void Memory::allocate(Type*& data) {
 
 template<typename Type>
 void Memory::deallocate(Type*& data) {
+	if (sizeof(Type) + INFO_SIZE > BLOCK_SIZE) {
+		delete data;
+		data = 0;
+		return;
+	}
+
 	data->~Type();
 	unsigned char* address = (unsigned char*) data;
 
