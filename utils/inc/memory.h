@@ -14,7 +14,7 @@
 #include <new>
 
 static const unsigned int _BLOCK_SIZE =
-		(unsigned int) ((long long) CACHE_LINE_SIZE - 3 * sizeof(void*));
+		(unsigned int) ((long long) CACHE_LINE_SIZE - 3U * sizeof(void*));
 
 static const unsigned int BLOCK_SIZE = _BLOCK_SIZE / sizeof(void*) * sizeof(void*);
 

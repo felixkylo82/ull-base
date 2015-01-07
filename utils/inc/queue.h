@@ -12,9 +12,9 @@
 
 #include <strings.h>
 
-static const unsigned int __ITEM_COUNT = (CACHE_LINE_SIZE - sizeof(void*)
-		- 2 * sizeof(unsigned short)) / sizeof(void*);
-static const unsigned int ITEM_COUNT = (0 == __ITEM_COUNT ? 1 : __ITEM_COUNT);
+static const unsigned int __ITEM_COUNT = (CACHE_LINE_SIZE * 64U - sizeof(void*)
+		- 2 * sizeof(unsigned int)) / sizeof(void*);
+static const unsigned int ITEM_COUNT = (0U == __ITEM_COUNT ? 1U : __ITEM_COUNT);
 
 template<typename Item>
 class Queue;
@@ -24,8 +24,8 @@ class QueueNode {
 private:
 	Item* items[ITEM_COUNT];
 	QueueNode<Item>* volatile next;
-	volatile unsigned short head;
-	volatile unsigned short tail;
+	volatile unsigned int head;
+	volatile unsigned int tail;
 
 public:
 	inline QueueNode();
@@ -74,7 +74,7 @@ bool QueueNode<Item>::push(Item* item) {
 			return false;
 		}
 
-		unsigned short tailOld = this->tail;
+		unsigned int tailOld = this->tail;
 		if (0 == tailOld % 2
 				&& __sync_bool_compare_and_swap(&this->tail, tailOld,
 						tailOld + 1)) {
@@ -96,7 +96,7 @@ bool QueueNode<Item>::pop(Item*& item) {
 			}
 		}
 
-		unsigned short headOld = this->head;
+		unsigned int headOld = this->head;
 		if (__sync_bool_compare_and_swap(&this->head, headOld, headOld + 2)) {
 			item = items[headOld / 2];
 			return true;
@@ -112,7 +112,7 @@ Queue<Item>::Queue() :
 
 template<typename Item>
 Queue<Item>::~Queue() {
-	__sync_synchronize();
+	while(this->pop());
 }
 
 template<typename Item>
