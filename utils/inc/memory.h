@@ -177,6 +177,14 @@ Memory::~Memory() {
 				break;
 			}
 		}
+
+		if ((void *) -1 == reserved->next) {
+			__sync_synchronize();
+			if ((void *) -1 == reserved->next) {
+				continue;
+			}
+		}
+
 		__sync_bool_compare_and_swap(&this->reserved, reserved, reserved->next);
 		delete reserved;
 	}
@@ -194,6 +202,7 @@ void Memory::allocate(Type*& data) {
 	MemoryNode* tailNew = 0;
 	while (true) {
 		MemoryNode* tailOld = this->tail;
+
 		unsigned int* address = 0;
 		if (dummy != tailOld && tailOld->allocate(address, sizeof(Type))) {
 			if (tailNew) {
@@ -204,19 +213,39 @@ void Memory::allocate(Type*& data) {
 			return;
 		}
 
-		if (!tailNew) {
-			tailNew = new MemoryNode(0);
-			tailNew->allocate(address, sizeof(Type));
-			//tailNew->pause();
-		}
-		if (__sync_bool_compare_and_swap(&tailOld->next, 0, tailNew)) {
-			__sync_bool_compare_and_swap(&this->tail, tailOld, tailNew);
-			__sync_bool_compare_and_swap(&this->reserved, 0, tailNew);
-			data = new (address) Type();
-			//tailNew->resume();
-			return;
+		if (__sync_bool_compare_and_swap(&tailOld->next, 0, (void *) -1)) {
+			if (dummy == tailOld || (dummy->next != tailOld || !tailOld->isFree())) {
+				__sync_synchronize();
+				if (dummy == tailOld || (dummy->next != tailOld || !tailOld->isFree())) {
+					if (!tailNew) {
+						tailNew = new MemoryNode(0);
+						tailNew->allocate(address, sizeof(Type));
+					}
+					__sync_bool_compare_and_swap(&this->tail, tailOld, tailNew);
+					__sync_bool_compare_and_swap(&this->reserved, 0, tailNew);
+					__sync_bool_compare_and_swap(&tailOld->next, (void *) -1, tailNew);
+					data = new (address) Type();
+					return;
+				}
+			}
+
+			if (this->reserved) {
+				__sync_bool_compare_and_swap(&this->tail, tailOld, this->reserved);
+				this->dummy->next = this->reserved;
+				__sync_bool_compare_and_swap(&tailOld->next, (void *) -1, 0);
+				if (tailNew) {
+					delete tailNew;
+					tailNew = 0;
+				}
+				this->reserved->allocate(address, sizeof(Type));
+				data = new (address) Type();
+				return;
+			}
+
+			__sync_bool_compare_and_swap(&tailOld->next, (void *) -1, 0);
 		} else {
-			__sync_bool_compare_and_swap(&this->tail, tailOld, tailOld->next);
+			if (tailOld->next && (void*) -1 != tailOld->next)
+				__sync_bool_compare_and_swap(&this->tail, tailOld, tailOld->next);
 		}
 	}
 }
@@ -234,10 +263,10 @@ void Memory::deallocate(Type*& data) {
 
 	while (true) {
 		MemoryNode* headOld = this->dummy->next;
-		if (headOld == 0) {
+		if (!headOld || (void *) -1 == headOld) {
 			__sync_synchronize();
 			headOld = this->dummy->next;
-			if (headOld == 0)
+			if (!headOld || (void *) -1 == headOld)
 				return;
 		}
 
@@ -259,24 +288,14 @@ void Memory::deallocateHelper(MemoryNode* headOld) {
 	}
 
 	MemoryNode* headNew = headOld->next;
-	if (!headNew) {
-		if (this->reserved) {
-			MemoryNode* dummyOld = this->dummy;
-			MemoryNode* dummyNew = new MemoryNode(this->reserved);
-			if (__sync_bool_compare_and_swap(&this->dummy, dummyOld, dummyNew)) {
-				dummyOld->next = 0;
-				delete dummyOld;
-				dummyOld = 0;
-			} else {
-				dummyNew->next = 0;
-				delete dummyNew;
-				dummyNew = 0;
-			}
-		}
-	} else {
-		if (__sync_bool_compare_and_swap(&this->dummy->next, headOld, headNew)) {
-			headOld->reset();
-		}
+	if (!headNew || (void *) -1 == headNew) {
+		__sync_synchronize();
+		if (!headNew || (void *) -1 == headNew)
+			return;
+	}
+
+	if (__sync_bool_compare_and_swap(&this->dummy->next, headOld, headNew)) {
+		headOld->reset();
 	}
 }
 

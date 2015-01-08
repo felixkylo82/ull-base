@@ -187,20 +187,17 @@ Item* Queue<Item>::pop() {
 
 		QueueNode<Item>* headNew = headOld->next;
 		if (!headNew) {
-			QueueNode<Item>* dummyOld = this->dummy;
-			if (__sync_bool_compare_and_swap(&this->dummy, dummyOld, headOld)) {
-				dummyOld->next = 0;
-				memory.deallocate(dummyOld);
-				//delete dummyOld;
-				//dummyOld = 0;
-			}
-		} else {
-			if (__sync_bool_compare_and_swap(&this->dummy->next, headOld, headNew)) {
-				headOld->next = 0;
-				memory.deallocate(headOld);
-				//delete headOld;
-				//headOld = 0;
-			}
+			__sync_synchronize();
+			headNew = headOld->next;
+			if (!headNew)
+				return 0;
+		}
+
+		if (__sync_bool_compare_and_swap(&this->dummy->next, headOld, headNew)) {
+			headOld->next = 0;
+			memory.deallocate(headOld);
+			//delete headOld;
+			//headOld = 0;
 		}
 	}
 }
