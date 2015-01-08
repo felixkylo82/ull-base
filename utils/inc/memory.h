@@ -15,7 +15,8 @@
 
 #define CACHE_LINE_COUNT_MEMORY_NODE 64U
 
-static const unsigned int __BLOCK_SIZE = (unsigned int) ((long long) (CACHE_LINE_COUNT_MEMORY_NODE * CACHE_LINE_SIZE) - 3 * (long long) sizeof(void*));
+static const unsigned int __BLOCK_SIZE = (unsigned int) ((long long) (CACHE_LINE_COUNT_MEMORY_NODE * CACHE_LINE_SIZE) - (long long) sizeof(void*)
+		- 2 * (long long) sizeof(unsigned int)) - (long long) sizeof(unsigned char);
 
 static const unsigned int BLOCK_SIZE = __BLOCK_SIZE / sizeof(void*) * sizeof(void*);
 static const unsigned int BLOCK_COUNT = BLOCK_SIZE / sizeof(unsigned int);
@@ -36,6 +37,7 @@ private:
 	MemoryNode* volatile next;
 	volatile unsigned int head;
 	volatile unsigned int tail;
+	volatile unsigned char isFull;
 
 public:
 	inline MemoryNode(MemoryNode* next);
@@ -44,7 +46,7 @@ public:
 	inline bool allocate(unsigned int*& address, unsigned int size);
 	inline bool deallocate(unsigned int*& address);
 
-	inline bool isTooSmall() const;
+	inline bool isFree() const;
 	inline void reset();
 
 	friend class Memory;
@@ -52,7 +54,7 @@ public:
 
 class Memory {
 private:
-	MemoryNode DUMMY;
+	MemoryNode* volatile dummy;
 	MemoryNode* volatile tail;
 	MemoryNode* volatile reserved;
 
@@ -68,7 +70,7 @@ private:
 };
 
 MemoryNode::MemoryNode(MemoryNode* next) :
-		next(next), head(0), tail(0) {
+		next(next), head(0), tail(0), isFull(0) {
 	bzero(blocks, BLOCK_SIZE);
 	__sync_synchronize();
 }
@@ -84,12 +86,20 @@ bool MemoryNode::allocate(unsigned int*& _address, unsigned int size) {
 	unsigned int count = size / sizeof(unsigned int);
 
 	while (true) {
-		if (BLOCK_COUNT <= this->tail + count) {
+		unsigned int tailOld = this->tail;
+		if (BLOCK_COUNT <= tailOld + count) {
 			_address = 0;
+			this->isFull = 1;
+			__sync_synchronize();
 			return false;
 		}
 
-		unsigned int tailOld = this->tail;
+		if (this->isFull)
+			return false;
+		__sync_synchronize();
+		if (this->isFull)
+			return false;
+
 		if (__sync_bool_compare_and_swap(&this->tail, tailOld, tailOld + count)) {
 			Info* info = (Info*) (blocks + tailOld);
 			info->size = size;
@@ -132,19 +142,20 @@ bool MemoryNode::deallocate(unsigned int*& _address) {
 	return true;
 }
 
-bool MemoryNode::isTooSmall() const {
-	return this->head + 1 >= this->tail;
+bool MemoryNode::isFree() const {
+	return this->head >= this->tail;
 }
 
 void MemoryNode::reset() {
 	bzero(blocks, BLOCK_SIZE);
 	this->tail = 0;
 	this->head = 0;
+	this->isFull = 0;
 	__sync_synchronize();
 }
 
 Memory::Memory(unsigned int preAlllocatedSize) :
-		DUMMY(0), tail(&DUMMY), reserved(0) {
+		dummy(new MemoryNode(0)), tail(dummy), reserved(0) {
 	preAlllocatedSize += (unsigned int) ((long long) sizeof(double) - 1);
 	unsigned int count = preAlllocatedSize / sizeof(double);
 	double** buffers = new double*[count];
@@ -161,6 +172,7 @@ Memory::~Memory() {
 		MemoryNode* reserved = this->reserved;
 		if (!reserved) {
 			__sync_synchronize();
+			reserved = this->reserved;
 			if (!reserved) {
 				break;
 			}
@@ -168,7 +180,7 @@ Memory::~Memory() {
 		__sync_bool_compare_and_swap(&this->reserved, reserved, reserved->next);
 		delete reserved;
 	}
-	this->tail = &DUMMY;
+	this->tail = dummy;
 	__sync_synchronize();
 }
 
@@ -183,7 +195,7 @@ void Memory::allocate(Type*& data) {
 	while (true) {
 		MemoryNode* tailOld = this->tail;
 		unsigned int* address = 0;
-		if (&DUMMY != tailOld && tailOld->allocate(address, sizeof(Type))) {
+		if (dummy != tailOld && tailOld->allocate(address, sizeof(Type))) {
 			if (tailNew) {
 				delete tailNew;
 				tailNew = 0;
@@ -194,12 +206,14 @@ void Memory::allocate(Type*& data) {
 
 		if (!tailNew) {
 			tailNew = new MemoryNode(0);
+			tailNew->allocate(address, sizeof(Type));
+			//tailNew->pause();
 		}
 		if (__sync_bool_compare_and_swap(&tailOld->next, 0, tailNew)) {
-			tailNew->allocate(address, sizeof(Type));
-			data = new (address) Type();
 			__sync_bool_compare_and_swap(&this->tail, tailOld, tailNew);
 			__sync_bool_compare_and_swap(&this->reserved, 0, tailNew);
+			data = new (address) Type();
+			//tailNew->resume();
 			return;
 		} else {
 			__sync_bool_compare_and_swap(&this->tail, tailOld, tailOld->next);
@@ -219,16 +233,16 @@ void Memory::deallocate(Type*& data) {
 	unsigned int* address = (unsigned int*) data;
 
 	while (true) {
-		MemoryNode* headOld = this->DUMMY.next;
+		MemoryNode* headOld = this->dummy->next;
 		if (headOld == 0) {
 			__sync_synchronize();
-			headOld = this->DUMMY.next;
+			headOld = this->dummy->next;
 			if (headOld == 0)
 				return;
 		}
 
 		if (headOld->deallocate(address)) {
-			if (headOld->isTooSmall())
+			if (headOld->isFree())
 				deallocateHelper(headOld);
 			return;
 		}
@@ -238,20 +252,31 @@ void Memory::deallocate(Type*& data) {
 }
 
 void Memory::deallocateHelper(MemoryNode* headOld) {
+	if (!headOld->isFull) {
+		__sync_synchronize();
+		if (!headOld->isFull)
+			return;
+	}
+
 	MemoryNode* headNew = headOld->next;
-	if (__sync_bool_compare_and_swap(&this->DUMMY.next, headOld, headNew)) {
-		if (!headNew) {
-			if (this->reserved) {
-				if (!__sync_bool_compare_and_swap(&this->tail, headOld, this->reserved)) {
-					__sync_bool_compare_and_swap(&this->DUMMY.next, 0, headOld->next);
-				}
+	if (!headNew) {
+		if (this->reserved) {
+			MemoryNode* dummyOld = this->dummy;
+			MemoryNode* dummyNew = new MemoryNode(this->reserved);
+			if (__sync_bool_compare_and_swap(&this->dummy, dummyOld, dummyNew)) {
+				dummyOld->next = 0;
+				delete dummyOld;
+				dummyOld = 0;
 			} else {
-				if (!__sync_bool_compare_and_swap(&this->tail, headOld, &this->DUMMY)) {
-					__sync_bool_compare_and_swap(&this->DUMMY.next, 0, headOld->next);
-				}
+				dummyNew->next = 0;
+				delete dummyNew;
+				dummyNew = 0;
 			}
 		}
-		headOld->reset();
+	} else {
+		if (__sync_bool_compare_and_swap(&this->dummy->next, headOld, headNew)) {
+			headOld->reset();
+		}
 	}
 }
 
