@@ -12,8 +12,10 @@
 
 #include <strings.h>
 
-static const unsigned int __ITEM_COUNT = (CACHE_LINE_SIZE * 64U - sizeof(void*)
-		- 2 * sizeof(unsigned int)) / sizeof(void*);
+#define CACHE_LINE_COUNT_QUEUE_NODE CACHE_LINE_COUNT_MEMORY_NODE / 8U
+
+static const unsigned int __ITEM_COUNT = (unsigned int) ((long long) (CACHE_LINE_COUNT_QUEUE_NODE * CACHE_LINE_SIZE) - (long long) sizeof(void*)
+		- 2 * (long long) sizeof(unsigned int)) / sizeof(void*);
 static const unsigned int ITEM_COUNT = (0U == __ITEM_COUNT ? 1U : __ITEM_COUNT);
 
 template<typename Item>
@@ -40,6 +42,7 @@ public:
 template<typename Item>
 class Queue {
 private:
+	Memory memory;
 	QueueNode<Item> DUMMY;
 	QueueNode<Item>* volatile tail;
 
@@ -75,9 +78,7 @@ bool QueueNode<Item>::push(Item* item) {
 		}
 
 		unsigned int tailOld = this->tail;
-		if (0 == tailOld % 2
-				&& __sync_bool_compare_and_swap(&this->tail, tailOld,
-						tailOld + 1)) {
+		if (0 == tailOld % 2 && __sync_bool_compare_and_swap(&this->tail, tailOld, tailOld + 1)) {
 			items[tailOld / 2] = item;
 			__sync_fetch_and_add(&this->tail, 1);
 			return true;
@@ -112,7 +113,8 @@ Queue<Item>::Queue() :
 
 template<typename Item>
 Queue<Item>::~Queue() {
-	while(this->pop());
+	while (this->pop())
+		;
 	tail = &DUMMY;
 	__sync_synchronize();
 }
@@ -124,15 +126,14 @@ void Queue<Item>::push(Item* item) {
 		QueueNode<Item>* tailOld = this->tail;
 		if (&DUMMY != tailOld && tailOld->push(item)) {
 			if (tailNew) {
-				delete tailNew;
-				tailNew = 0;
+				memory.deallocate(tailNew);
 			}
 			return;
 		}
 
 		if (!tailOld->next) {
 			if (!tailNew) {
-				tailNew = new QueueNode<Item>();
+				memory.allocate(tailNew);
 			}
 			if (__sync_bool_compare_and_swap(&tailOld->next, 0, tailNew)) {
 				tailNew->push(item);
@@ -163,15 +164,12 @@ Item* Queue<Item>::pop() {
 		QueueNode<Item>* headNew = headOld->next;
 		if (__sync_bool_compare_and_swap(&this->DUMMY.next, headOld, headNew)) {
 			if (!headNew) {
-				if (!__sync_bool_compare_and_swap(&this->tail, headOld,
-						&this->DUMMY)) {
-					__sync_bool_compare_and_swap(&this->DUMMY.next, 0,
-							headOld->next);
+				if (!__sync_bool_compare_and_swap(&this->tail, headOld, &this->DUMMY)) {
+					__sync_bool_compare_and_swap(&this->DUMMY.next, 0, headOld->next);
 				}
 			}
 			headOld->next = 0;
-			delete headOld;
-			headOld = 0;
+			memory.deallocate(headOld);
 		}
 	}
 }
