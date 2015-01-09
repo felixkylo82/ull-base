@@ -14,9 +14,7 @@
 
 #define CACHE_LINE_COUNT_QUEUE_NODE CACHE_LINE_COUNT_MEMORY_NODE / 8U
 
-static const unsigned int __ITEM_COUNT = (unsigned int) ((long long) (CACHE_LINE_COUNT_QUEUE_NODE * CACHE_LINE_SIZE) - (long long) sizeof(void*)
-		- 2 * (long long) sizeof(unsigned int)) / sizeof(void*);
-static const unsigned int ITEM_COUNT = (0U == __ITEM_COUNT ? 1U : __ITEM_COUNT);
+static const unsigned int ITEM_COUNT = CACHE_LINE_COUNT_QUEUE_NODE * CACHE_LINE_SIZE / sizeof(void*);
 
 template<typename Item>
 class Queue;

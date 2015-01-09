@@ -15,10 +15,7 @@
 
 #define CACHE_LINE_COUNT_MEMORY_NODE 64U
 
-static const unsigned int __BLOCK_SIZE = (unsigned int) ((long long) (CACHE_LINE_COUNT_MEMORY_NODE * CACHE_LINE_SIZE) - (long long) sizeof(void*)
-		- 2 * (long long) sizeof(unsigned int)) - (long long) sizeof(unsigned char);
-
-static const unsigned int BLOCK_SIZE = __BLOCK_SIZE / sizeof(void*) * sizeof(void*);
+static const unsigned int BLOCK_SIZE = CACHE_LINE_COUNT_MEMORY_NODE * CACHE_LINE_SIZE / sizeof(void*) * sizeof(void*);
 static const unsigned int BLOCK_COUNT = BLOCK_SIZE / sizeof(unsigned int);
 
 class Memory;
