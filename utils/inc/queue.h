@@ -42,7 +42,7 @@ public:
 template<typename Item>
 class Queue {
 private:
-	Memory memory;
+	//Memory memory;
 	QueueNode<Item>* volatile dummy;
 	QueueNode<Item>* volatile tail;
 
@@ -138,16 +138,16 @@ void Queue<Item>::push(Item* item) {
 
 		if (dummy != tailOld && tailOld->push(item)) {
 			if (tailNew) {
-				memory.deallocate(tailNew);
-				//delete tailNew;
-				//tailNew = 0;
+				//memory.deallocate(tailNew);
+				delete tailNew;
+				tailNew = 0;
 			}
 			return;
 		}
 
 		if (!tailNew) {
-			memory.allocate(tailNew);
-			//tailNew = new QueueNode<Item>();
+			//memory.allocate(tailNew);
+			tailNew = new QueueNode<Item>();
 			tailNew->push(item);
 		}
 		if (__sync_bool_compare_and_swap(&this->tail, tailOld, tailNew)) {
@@ -193,9 +193,9 @@ Item* Queue<Item>::pop() {
 
 		if (__sync_bool_compare_and_swap(&this->dummy->next, headOld, headNew)) {
 			headOld->next = 0;
-			memory.deallocate(headOld);
-			//delete headOld;
-			//headOld = 0;
+			//memory.deallocate(headOld);
+			delete headOld;
+			headOld = 0;
 		}
 	}
 }

@@ -21,8 +21,7 @@ static const unsigned int BLOCK_COUNT = BLOCK_SIZE / sizeof(unsigned int);
 class Memory;
 
 struct Info {
-	unsigned int size;
-	unsigned char isAllocated;
+	unsigned int next;
 };
 
 static const unsigned int INFO_SIZE = (sizeof(Info) + (unsigned int) ((long long) MAX_ALIGNMENT - 1)) / MAX_ALIGNMENT * MAX_ALIGNMENT;
@@ -31,6 +30,7 @@ static const unsigned int INFO_COUNT = INFO_SIZE / sizeof(unsigned int);
 class MemoryNode {
 private:
 	unsigned int blocks[BLOCK_COUNT];
+	unsigned char isAllocated[BLOCK_COUNT];
 	MemoryNode* volatile next;
 	volatile unsigned int head;
 	volatile unsigned int tail;
@@ -56,7 +56,7 @@ private:
 	MemoryNode* volatile reserved;
 
 public:
-	Memory(unsigned int preAlllocatedSize = CACHE_LINE_SIZE * 64);
+	Memory(unsigned int preAlllocatedSize = 1024 * 1024);
 	virtual ~Memory();
 
 	template<typename Type> void allocate(Type*& item);
@@ -68,7 +68,8 @@ private:
 
 MemoryNode::MemoryNode(MemoryNode* next) :
 		next(next), head(0), tail(0), isFull(0) {
-	bzero(blocks, BLOCK_SIZE);
+	bzero(blocks, sizeof(blocks));
+	bzero(isAllocated, sizeof(isAllocated));
 	__sync_synchronize();
 }
 
@@ -99,8 +100,8 @@ bool MemoryNode::allocate(unsigned int*& _address, unsigned int size) {
 
 		if (__sync_bool_compare_and_swap(&this->tail, tailOld, tailOld + count)) {
 			Info* info = (Info*) (blocks + tailOld);
-			info->size = size;
-			info->isAllocated = 1;
+			info->next = this->tail;
+			isAllocated[tailOld] = 1;
 			_address = blocks + tailOld + INFO_COUNT;
 			return true;
 		}
@@ -113,28 +114,24 @@ bool MemoryNode::deallocate(unsigned int*& _address) {
 	if (address < 0 || address >= BLOCK_COUNT) {
 		return false;
 	}
-
-	Info* info = (Info*) (blocks + address);
-	info->isAllocated = 0;
+	isAllocated[address] = 0;
 
 	while (true) {
 		unsigned int head = this->head;
 		if (head >= this->tail)
 			break;
 		Info* info = ((Info*) (blocks + head));
-		if (info->isAllocated) {
+		if (isAllocated[head]) {
 			__sync_synchronize();
 			head = this->head;
 			if (head >= this->tail)
 				break;
 			info = ((Info*) (blocks + head));
-			if (info->isAllocated)
+			if (isAllocated[head])
 				break;
 		}
 
-		unsigned int count = info->size / sizeof(unsigned int);
-
-		__sync_bool_compare_and_swap(&this->head, head, head + count);
+		__sync_bool_compare_and_swap(&this->head, head, info->next);
 	}
 	return true;
 }
@@ -144,7 +141,8 @@ bool MemoryNode::isFree() const {
 }
 
 void MemoryNode::reset() {
-	bzero(blocks, BLOCK_SIZE);
+	bzero(blocks, sizeof(blocks));
+	bzero(isAllocated, sizeof(isAllocated));
 	this->tail = 0;
 	this->head = 0;
 	this->isFull = 0;
