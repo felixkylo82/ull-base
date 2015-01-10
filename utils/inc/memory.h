@@ -14,7 +14,7 @@
 #include <new>
 #include <cassert>
 
-#define CACHE_LINE_COUNT_MEMORY_NODE 64U
+#define CACHE_LINE_COUNT_MEMORY_NODE 128U
 
 static const unsigned int BLOCK_SIZE = CACHE_LINE_COUNT_MEMORY_NODE * CACHE_LINE_SIZE;
 static const unsigned int BLOCK_COUNT = BLOCK_SIZE / sizeof(unsigned int);
@@ -141,7 +141,7 @@ bool MemoryNode::deallocate(unsigned int*& _address) {
 	*/
 	Info* info = ((Info*) (blocks + address));
 	if (!__sync_bool_compare_and_swap(&this->head, address, info->next)) {
-		assert("the memory object does not support unordered deallocation");
+		assert(false);
 	}
 	return true;
 }
