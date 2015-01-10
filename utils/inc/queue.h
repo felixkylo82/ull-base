@@ -8,9 +8,11 @@
 #ifndef INC_QUEUE_H_
 #define INC_QUEUE_H_
 
+#include "common.h"
+
 #include <strings.h>
 
-#define CACHE_LINE_COUNT_QUEUE_NODE 256U
+#define CACHE_LINE_COUNT_QUEUE_NODE 128U
 
 static const unsigned int ITEM_COUNT = CACHE_LINE_COUNT_QUEUE_NODE * CACHE_LINE_SIZE / sizeof(void*);
 
