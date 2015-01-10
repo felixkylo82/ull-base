@@ -12,7 +12,7 @@
 
 #include <strings.h>
 
-#define CACHE_LINE_COUNT_QUEUE_NODE CACHE_LINE_COUNT_MEMORY_NODE / 8U
+#define CACHE_LINE_COUNT_QUEUE_NODE 8U
 
 static const unsigned int ITEM_COUNT = CACHE_LINE_COUNT_QUEUE_NODE * CACHE_LINE_SIZE / sizeof(void*);
 
@@ -22,10 +22,10 @@ class Queue;
 template<typename Item>
 class QueueNode {
 private:
-	Item* items[ITEM_COUNT];
 	QueueNode<Item>* volatile next;
 	volatile unsigned int head;
 	volatile unsigned int tail;
+	Item* items[ITEM_COUNT] __attribute__ ((aligned (CACHE_LINE_SIZE)));
 
 public:
 	inline QueueNode();

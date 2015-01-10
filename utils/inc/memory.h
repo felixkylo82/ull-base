@@ -15,8 +15,9 @@
 
 #define CACHE_LINE_COUNT_MEMORY_NODE 64U
 
-static const unsigned int BLOCK_SIZE = CACHE_LINE_COUNT_MEMORY_NODE * CACHE_LINE_SIZE / sizeof(void*) * sizeof(void*);
+static const unsigned int BLOCK_SIZE = CACHE_LINE_COUNT_MEMORY_NODE * CACHE_LINE_SIZE;
 static const unsigned int BLOCK_COUNT = BLOCK_SIZE / sizeof(unsigned int);
+//static const unsigned int LOT_COUNT = BLOCK_COUNT / sizeof(unsigned int);
 
 class Memory;
 
@@ -25,16 +26,16 @@ struct Info {
 };
 
 static const unsigned int INFO_SIZE = (sizeof(Info) + (unsigned int) ((long long) MAX_ALIGNMENT - 1)) / MAX_ALIGNMENT * MAX_ALIGNMENT;
-static const unsigned int INFO_COUNT = INFO_SIZE / sizeof(unsigned int);
+static const unsigned int INFO_COUNT = INFO_SIZE / sizeof(unsigned long long);
 
 class MemoryNode {
 private:
-	unsigned int blocks[BLOCK_COUNT];
-	unsigned char isAllocated[BLOCK_COUNT];
 	MemoryNode* volatile next;
 	volatile unsigned int head;
 	volatile unsigned int tail;
 	volatile unsigned char isFull;
+	unsigned int blocks[BLOCK_COUNT] __attribute__ ((aligned (CACHE_LINE_SIZE)));
+	unsigned char lots[BLOCK_COUNT] __attribute__ ((aligned (CACHE_LINE_SIZE)));
 
 public:
 	inline MemoryNode(MemoryNode* next);
@@ -69,7 +70,7 @@ private:
 MemoryNode::MemoryNode(MemoryNode* next) :
 		next(next), head(0), tail(0), isFull(0) {
 	bzero(blocks, sizeof(blocks));
-	bzero(isAllocated, sizeof(isAllocated));
+	bzero(lots, sizeof(lots));
 	__sync_synchronize();
 }
 
@@ -101,7 +102,7 @@ bool MemoryNode::allocate(unsigned int*& _address, unsigned int size) {
 		if (__sync_bool_compare_and_swap(&this->tail, tailOld, tailOld + count)) {
 			Info* info = (Info*) (blocks + tailOld);
 			info->next = this->tail;
-			isAllocated[tailOld] = 1;
+			lots[tailOld] = 1U;
 			_address = blocks + tailOld + INFO_COUNT;
 			return true;
 		}
@@ -114,20 +115,20 @@ bool MemoryNode::deallocate(unsigned int*& _address) {
 	if (address < 0 || address >= BLOCK_COUNT) {
 		return false;
 	}
-	isAllocated[address] = 0;
+	lots[address] = 0U;
 
 	while (true) {
 		unsigned int head = this->head;
 		if (head >= this->tail)
 			break;
 		Info* info = ((Info*) (blocks + head));
-		if (isAllocated[head]) {
+		if (lots[head]) {
 			__sync_synchronize();
 			head = this->head;
 			if (head >= this->tail)
 				break;
 			info = ((Info*) (blocks + head));
-			if (isAllocated[head])
+			if (lots[head])
 				break;
 		}
 
@@ -142,7 +143,7 @@ bool MemoryNode::isFree() const {
 
 void MemoryNode::reset() {
 	bzero(blocks, sizeof(blocks));
-	bzero(isAllocated, sizeof(isAllocated));
+	bzero(lots, sizeof(lots));
 	this->tail = 0;
 	this->head = 0;
 	this->isFull = 0;
