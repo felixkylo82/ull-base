@@ -12,7 +12,6 @@
 
 #include <strings.h>
 #include <new>
-#include <cassert>
 
 #define CACHE_LINE_COUNT_MEMORY_NODE 128U
 
@@ -82,9 +81,8 @@ MemoryNode::~MemoryNode() {
 }
 
 bool MemoryNode::allocate(unsigned int*& _address, unsigned int size) {
-	size = (size + INFO_SIZE + (unsigned int) ((long long) sizeof(unsigned int) - 1)) / sizeof(unsigned int) * sizeof(unsigned int);
+	size = (size + INFO_SIZE + (unsigned int) ((long long) MAX_ALIGNMENT - 1)) / MAX_ALIGNMENT * MAX_ALIGNMENT;
 	unsigned int count = size / sizeof(unsigned int);
-	count = (count + 1) / 2 * 2;
 
 	while (true) {
 		unsigned int tailOld = this->tail;
@@ -141,7 +139,7 @@ bool MemoryNode::deallocate(unsigned int*& _address) {
 	*/
 	Info* info = ((Info*) (blocks + address));
 	if (!__sync_bool_compare_and_swap(&this->head, address, info->next)) {
-		assert(false);
+		ASSERT(false, "unordered deallocations are not supported");
 	}
 	return true;
 }

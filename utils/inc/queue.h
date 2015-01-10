@@ -8,8 +8,6 @@
 #ifndef INC_QUEUE_H_
 #define INC_QUEUE_H_
 
-#include "memory.h"
-
 #include <strings.h>
 
 #define CACHE_LINE_COUNT_QUEUE_NODE 256U
