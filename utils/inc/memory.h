@@ -12,6 +12,7 @@
 
 #include <strings.h>
 #include <new>
+#include <cassert>
 
 #define CACHE_LINE_COUNT_MEMORY_NODE 64U
 
@@ -35,7 +36,7 @@ private:
 	volatile unsigned int tail;
 	volatile unsigned char isFull;
 	unsigned int blocks[BLOCK_COUNT] __attribute__ ((aligned (CACHE_LINE_SIZE)));
-	unsigned char lots[BLOCK_COUNT] __attribute__ ((aligned (CACHE_LINE_SIZE)));
+	//unsigned char lots[BLOCK_COUNT] __attribute__ ((aligned (CACHE_LINE_SIZE)));
 
 public:
 	inline MemoryNode(MemoryNode* next);
@@ -70,7 +71,7 @@ private:
 MemoryNode::MemoryNode(MemoryNode* next) :
 		next(next), head(0), tail(0), isFull(0) {
 	bzero(blocks, sizeof(blocks));
-	bzero(lots, sizeof(lots));
+	//bzero(lots, sizeof(lots));
 	__sync_synchronize();
 }
 
@@ -83,6 +84,7 @@ MemoryNode::~MemoryNode() {
 bool MemoryNode::allocate(unsigned int*& _address, unsigned int size) {
 	size = (size + INFO_SIZE + (unsigned int) ((long long) sizeof(unsigned int) - 1)) / sizeof(unsigned int) * sizeof(unsigned int);
 	unsigned int count = size / sizeof(unsigned int);
+	count = (count + 1) / 2 * 2;
 
 	while (true) {
 		unsigned int tailOld = this->tail;
@@ -102,7 +104,7 @@ bool MemoryNode::allocate(unsigned int*& _address, unsigned int size) {
 		if (__sync_bool_compare_and_swap(&this->tail, tailOld, tailOld + count)) {
 			Info* info = (Info*) (blocks + tailOld);
 			info->next = this->tail;
-			lots[tailOld] = 1U;
+			//lots[tailOld] = 1U;
 			_address = blocks + tailOld + INFO_COUNT;
 			return true;
 		}
@@ -115,6 +117,7 @@ bool MemoryNode::deallocate(unsigned int*& _address) {
 	if (address < 0 || address >= BLOCK_COUNT) {
 		return false;
 	}
+	/*
 	lots[address] = 0U;
 
 	while (true) {
@@ -135,6 +138,12 @@ bool MemoryNode::deallocate(unsigned int*& _address) {
 		__sync_bool_compare_and_swap(&this->head, head, info->next);
 	}
 	return true;
+	*/
+	Info* info = ((Info*) (blocks + address));
+	if (!__sync_bool_compare_and_swap(&this->head, address, info->next)) {
+		assert("the memory object does not support unordered deallocation");
+	}
+	return true;
 }
 
 bool MemoryNode::isFree() const {
@@ -143,7 +152,7 @@ bool MemoryNode::isFree() const {
 
 void MemoryNode::reset() {
 	bzero(blocks, sizeof(blocks));
-	bzero(lots, sizeof(lots));
+	//bzero(lots, sizeof(lots));
 	this->tail = 0;
 	this->head = 0;
 	this->isFull = 0;
