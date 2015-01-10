@@ -25,7 +25,7 @@ private:
 	QueueNode<Item>* volatile next;
 	volatile unsigned int head;
 	volatile unsigned int tail;
-	Item* items[ITEM_COUNT] __attribute__ ((aligned (CACHE_LINE_SIZE)));
+	Item* volatile items[ITEM_COUNT] __attribute__ ((aligned (CACHE_LINE_SIZE)));
 
 public:
 	inline QueueNode();
@@ -65,13 +65,14 @@ private:
 template<typename Item>
 QueueNode<Item>::QueueNode() :
 		next(0), head(0), tail(0) {
-	bzero(items, sizeof(items));
+	for (unsigned int i = 0; i < ITEM_COUNT; ++i) items[i] = 0;
 	__sync_synchronize();
 }
 
 template<typename Item>
 QueueNode<Item>::~QueueNode() {
 	reset();
+	__sync_synchronize();
 }
 
 template<typename Item>
@@ -117,16 +118,15 @@ bool QueueNode<Item>::isFull() const {
 
 template<typename Item>
 void QueueNode<Item>::reset() {
-	bzero(items, sizeof(items));
+	for (unsigned int i = 0; i < ITEM_COUNT; ++i) items[i] = 0;
 	this->tail = 0;
 	this->head = 0;
 	this->next = 0;
-	__sync_synchronize();
 }
 
 template<typename Item>
 Queue<Item>::Queue() :
-		dummy(new QueueNode<Item>()), tail(dummy), dummyReserved(new QueueNode<Item>()), tailReserved(dummyReserved) {
+		dummy(new QueueNode<Item>()), tail(dummy), dummyReserved(new QueueNode<Item>()), tailReserved(this->dummyReserved) {
 	__sync_synchronize();
 }
 
@@ -134,28 +134,26 @@ template<typename Item>
 Queue<Item>::~Queue() {
 	while (this->pop())
 		;
-	tail = 0;
-	delete dummy;
-	dummy = 0;
+	this->tail = 0;
+	delete this->dummy;
+	this->dummy = 0;
 
+	this->tailReserved = 0;
 	while(true) {
-		QueueNode<Item>* headOld = this->dummyReserved->next;
-		if (!headOld) {
+		QueueNode<Item>* dummyReserved = this->dummyReserved;
+		if (!dummyReserved) {
 			__sync_synchronize();
-			headOld = this->dummyReserved->next;
-			if (!headOld) {
+			dummyReserved = this->dummyReserved;
+			if (!dummyReserved) {
 				break;
 			}
 		}
 
-		__sync_bool_compare_and_swap(&this->dummyReserved->next, headOld, headOld->next);
-		headOld->next = 0;
-		delete headOld;
-		headOld = 0;
+		__sync_bool_compare_and_swap(&this->dummyReserved, dummyReserved, dummyReserved->next);
+		dummyReserved->next = 0;
+		delete dummyReserved;
+		dummyReserved = 0;
 	}
-	tailReserved = 0;
-	delete dummyReserved;
-	dummyReserved = 0;
 
 	__sync_synchronize();
 }
@@ -190,10 +188,12 @@ void Queue<Item>::push(Item* item) {
 template<typename Item>
 Item* Queue<Item>::pop() {
 	while (true) {
-		QueueNode<Item>* headOld = this->dummy->next;
+		QueueNode<Item>* dummy = this->dummy;
+		QueueNode<Item>* headOld = dummy->next;
 		if (headOld == 0) {
 			__sync_synchronize();
-			headOld = this->dummy->next;
+			dummy = this->dummy;
+			headOld = dummy->next;
 			if (headOld == 0)
 				return 0;
 		}
@@ -213,16 +213,8 @@ Item* Queue<Item>::pop() {
 			return item;
 		}
 
-		QueueNode<Item>* headNew = headOld->next;
-		if (!headNew) {
-			__sync_synchronize();
-			headNew = headOld->next;
-			if (!headNew)
-				return 0;
-		}
-
-		if (__sync_bool_compare_and_swap(&this->dummy->next, headOld, headNew))
-			this->pushReserved(headOld);
+		if (__sync_bool_compare_and_swap(&this->dummy, dummy, headOld))
+			this->pushReserved(dummy);
 	}
 }
 
@@ -249,18 +241,19 @@ void Queue<Item>::pushReserved(QueueNode<Item>*& tailNew) {
 template<typename Item>
 QueueNode<Item>* Queue<Item>::popReserved() {
 	while (true) {
-		QueueNode<Item>* headOld = this->dummyReserved->next;
+		QueueNode<Item>* dummyReserved = this->dummyReserved;
+		QueueNode<Item>* headOld = dummyReserved->next;
 		if (headOld == 0) {
 			__sync_synchronize();
-			headOld = this->dummyReserved->next;
+			dummyReserved = this->dummyReserved;
+			headOld = dummyReserved->next;
 			if (headOld == 0)
 				return new QueueNode<Item>();
 		}
 
-		QueueNode<Item>* headNew = headOld->next;
-		if (__sync_bool_compare_and_swap(&this->dummyReserved->next, headOld, headNew)) {
-			headOld->reset();
-			return headOld;
+		if (__sync_bool_compare_and_swap(&this->dummyReserved, dummyReserved, headOld)) {
+			dummyReserved->reset();
+			return dummyReserved;
 		}
 	}
 }
