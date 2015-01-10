@@ -139,7 +139,7 @@ bool MemoryNode::deallocate(unsigned int*& _address) {
 	*/
 	Info* info = ((Info*) (blocks + address));
 	if (!__sync_bool_compare_and_swap(&this->head, address, info->next)) {
-		ASSERT(false, "unordered deallocations are not supported");
+		ASSERT(false, "unordered deallocations are not supported\n");
 	}
 	return true;
 }

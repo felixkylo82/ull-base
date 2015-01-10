@@ -150,8 +150,8 @@ void Queue<Item>::push(Item* item) {
 			tailNew = new QueueNode<Item>();
 			tailNew->push(item);
 		}
-		if (__sync_bool_compare_and_swap(&this->tail, tailOld, tailNew)) {
-			__sync_bool_compare_and_swap(&tailOld->next, 0, tailNew);
+		if (__sync_bool_compare_and_swap(&tailOld->next, 0, tailNew)) {
+			__sync_bool_compare_and_swap(&this->tail, tailOld, tailNew);
 			return;
 		}
 	}
