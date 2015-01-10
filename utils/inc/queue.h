@@ -32,9 +32,8 @@ public:
 	inline virtual ~QueueNode();
 
 	inline bool push(Item* item);
-	inline bool pop(Item*& item);
+	inline bool pop(Item*& item, bool& isFree);
 
-	inline bool isFull() const;
 	inline void reset();
 
 	friend class Queue<Item> ;
@@ -79,12 +78,12 @@ template<typename Item>
 bool QueueNode<Item>::push(Item* item) {
 	while (true) {
 		unsigned int tailOld = this->tail;
-		if (ITEM_COUNT * 2 <= tailOld + 1) {
+		if (ITEM_COUNT * 2U <= tailOld + 1) {
 			return false;
 		}
 
-		if (0 == tailOld % 2 && __sync_bool_compare_and_swap(&this->tail, tailOld, tailOld + 1)) {
-			items[tailOld / 2] = item;
+		if (0 == tailOld % 2U && __sync_bool_compare_and_swap(&this->tail, tailOld, tailOld + 1)) {
+			items[tailOld / 2U] = item;
 			__sync_fetch_and_add(&this->tail, 1);
 			return true;
 		}
@@ -92,9 +91,17 @@ bool QueueNode<Item>::push(Item* item) {
 }
 
 template<typename Item>
-bool QueueNode<Item>::pop(Item*& item) {
+bool QueueNode<Item>::pop(Item*& item, bool& isFree) {
+	isFree = false;
+
 	while (true) {
 		unsigned int headOld = this->head;
+		if (ITEM_COUNT * 2U <= headOld + 1) {
+			item = 0;
+			isFree = true;
+			return false;
+		}
+
 		if (this->tail <= headOld + 1) {
 			__sync_synchronize();
 			headOld = this->head;
@@ -104,16 +111,11 @@ bool QueueNode<Item>::pop(Item*& item) {
 			}
 		}
 
-		if (__sync_bool_compare_and_swap(&this->head, headOld, headOld + 2)) {
-			item = items[headOld / 2];
+		if (__sync_bool_compare_and_swap(&this->head, headOld, headOld + 2U)) {
+			item = items[headOld / 2U];
 			return true;
 		}
 	}
-}
-
-template<typename Item>
-bool QueueNode<Item>::isFull() const {
-	return ITEM_COUNT * 2 <= this->tail;
 }
 
 template<typename Item>
@@ -199,18 +201,13 @@ Item* Queue<Item>::pop() {
 		}
 
 		Item* item = 0;
-		if (headOld->pop(item)) {
+		bool isFree;
+		if (headOld->pop(item, isFree)) {
 			return item;
 		}
 
-		if (!headOld->isFull()) {
-			__sync_synchronize();
-			if (!headOld->isFull())
-				return 0;
-		}
-
-		if (headOld->pop(item)) {
-			return item;
+		if (!isFree) {
+			return 0;
 		}
 
 		if (__sync_bool_compare_and_swap(&this->dummy, dummy, headOld))
