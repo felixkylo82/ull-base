@@ -92,12 +92,12 @@ bool QueueNode<Item>::push(Item* item) {
 
 template<typename Item>
 bool QueueNode<Item>::pop(Item*& item, bool& isFree) {
+	item = 0;
 	isFree = false;
 
 	while (true) {
 		unsigned int headOld = this->head;
 		if (ITEM_COUNT * 2U <= headOld + 1) {
-			item = 0;
 			isFree = true;
 			return false;
 		}
@@ -106,7 +106,6 @@ bool QueueNode<Item>::pop(Item*& item, bool& isFree) {
 			__sync_synchronize();
 			headOld = this->head;
 			if (this->tail <= headOld + 1) {
-				item = 0;
 				return false;
 			}
 		}
@@ -200,7 +199,7 @@ Item* Queue<Item>::pop() {
 				return 0;
 		}
 
-		Item* item = 0;
+		Item* item;
 		bool isFree;
 		if (headOld->pop(item, isFree)) {
 			return item;
