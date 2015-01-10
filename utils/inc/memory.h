@@ -13,7 +13,7 @@
 #include <strings.h>
 #include <new>
 
-#define CACHE_LINE_COUNT_MEMORY_NODE 128U
+#define CACHE_LINE_COUNT_MEMORY_NODE 256U
 
 static const unsigned int BLOCK_SIZE = CACHE_LINE_COUNT_MEMORY_NODE * CACHE_LINE_SIZE;
 static const unsigned int BLOCK_COUNT = BLOCK_SIZE / sizeof(unsigned int);
@@ -139,7 +139,7 @@ bool MemoryNode::deallocate(unsigned int*& _address) {
 	*/
 	Info* info = ((Info*) (blocks + address));
 	if (!__sync_bool_compare_and_swap(&this->head, address, info->next)) {
-		ASSERT(false, "unordered deallocations are not supported\n");
+		ASSERT(false, "unordered deallocations are not supported");
 	}
 	return true;
 }

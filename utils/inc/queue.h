@@ -12,7 +12,7 @@
 
 #include <strings.h>
 
-#define CACHE_LINE_COUNT_QUEUE_NODE 128U
+#define CACHE_LINE_COUNT_QUEUE_NODE 256U
 
 static const unsigned int ITEM_COUNT = CACHE_LINE_COUNT_QUEUE_NODE * CACHE_LINE_SIZE / sizeof(void*);
 
@@ -35,6 +35,7 @@ public:
 	inline bool pop(Item*& item);
 
 	inline bool isFull() const;
+	inline void reset();
 
 	friend class Queue<Item> ;
 };
@@ -46,12 +47,19 @@ private:
 	QueueNode<Item>* volatile dummy;
 	QueueNode<Item>* volatile tail;
 
+	QueueNode<Item>* volatile dummyReserved;
+	QueueNode<Item>* volatile tailReserved;
+
 public:
 	Queue();
 	virtual ~Queue();
 
 	void push(Item* item);
 	Item* pop();
+
+private:
+	void pushReserved(QueueNode<Item>*& item);
+	QueueNode<Item>* popReserved();
 };
 
 template<typename Item>
@@ -63,11 +71,7 @@ QueueNode<Item>::QueueNode() :
 
 template<typename Item>
 QueueNode<Item>::~QueueNode() {
-	bzero(items, sizeof(items));
-	this->tail = 0;
-	this->head = 0;
-	this->next = 0;
-	__sync_synchronize();
+	reset();
 }
 
 template<typename Item>
@@ -112,8 +116,17 @@ bool QueueNode<Item>::isFull() const {
 }
 
 template<typename Item>
+void QueueNode<Item>::reset() {
+	bzero(items, sizeof(items));
+	this->tail = 0;
+	this->head = 0;
+	this->next = 0;
+	__sync_synchronize();
+}
+
+template<typename Item>
 Queue<Item>::Queue() :
-		dummy(new QueueNode<Item>()), tail(dummy) {
+		dummy(new QueueNode<Item>()), tail(dummy), dummyReserved(new QueueNode<Item>()), tailReserved(dummyReserved) {
 	__sync_synchronize();
 }
 
@@ -122,7 +135,28 @@ Queue<Item>::~Queue() {
 	while (this->pop())
 		;
 	tail = 0;
+	delete dummy;
 	dummy = 0;
+
+	while(true) {
+		QueueNode<Item>* headOld = this->dummyReserved->next;
+		if (!headOld) {
+			__sync_synchronize();
+			headOld = this->dummyReserved->next;
+			if (!headOld) {
+				break;
+			}
+		}
+
+		__sync_bool_compare_and_swap(&this->dummyReserved->next, headOld, headOld->next);
+		headOld->next = 0;
+		delete headOld;
+		headOld = 0;
+	}
+	tailReserved = 0;
+	delete dummyReserved;
+	dummyReserved = 0;
+
 	__sync_synchronize();
 }
 
@@ -137,17 +171,13 @@ void Queue<Item>::push(Item* item) {
 		}
 
 		if (dummy != tailOld && tailOld->push(item)) {
-			if (tailNew) {
-				//memory.deallocate(tailNew);
-				delete tailNew;
-				tailNew = 0;
-			}
+			if (tailNew)
+				this->pushReserved(tailNew);
 			return;
 		}
 
 		if (!tailNew) {
-			//memory.allocate(tailNew);
-			tailNew = new QueueNode<Item>();
+			tailNew = this->popReserved();
 			tailNew->push(item);
 		}
 		if (__sync_bool_compare_and_swap(&tailOld->next, 0, tailNew)) {
@@ -191,11 +221,46 @@ Item* Queue<Item>::pop() {
 				return 0;
 		}
 
-		if (__sync_bool_compare_and_swap(&this->dummy->next, headOld, headNew)) {
-			headOld->next = 0;
-			//memory.deallocate(headOld);
-			delete headOld;
-			headOld = 0;
+		if (__sync_bool_compare_and_swap(&this->dummy->next, headOld, headNew))
+			this->pushReserved(headOld);
+	}
+}
+
+template<typename Item>
+void Queue<Item>::pushReserved(QueueNode<Item>*& tailNew) {
+	tailNew->next = 0;
+	//tailNew->reset();
+
+	while (true) {
+		QueueNode<Item>* tailOld = this->tailReserved;
+		while (tailOld->next) {
+			__sync_bool_compare_and_swap(&this->tailReserved, tailOld, tailOld->next);
+			tailOld = this->tailReserved;
+		}
+
+		if (__sync_bool_compare_and_swap(&tailOld->next, 0, tailNew)) {
+			__sync_bool_compare_and_swap(&this->tailReserved, tailOld, tailNew);
+			tailNew = 0;
+			return;
+		}
+	}
+}
+
+template<typename Item>
+QueueNode<Item>* Queue<Item>::popReserved() {
+	while (true) {
+		QueueNode<Item>* headOld = this->dummyReserved->next;
+		if (headOld == 0) {
+			__sync_synchronize();
+			headOld = this->dummyReserved->next;
+			if (headOld == 0)
+				return new QueueNode<Item>();
+		}
+
+		QueueNode<Item>* headNew = headOld->next;
+		if (__sync_bool_compare_and_swap(&this->dummyReserved->next, headOld, headNew)) {
+			headOld->reset();
+			return headOld;
 		}
 	}
 }
