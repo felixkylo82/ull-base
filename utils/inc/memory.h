@@ -30,12 +30,12 @@ static const unsigned int INFO_COUNT = INFO_SIZE / sizeof(unsigned long long);
 
 class MemoryNode {
 private:
-	MemoryNode* volatile next;
-	volatile unsigned int head;
 	volatile unsigned int tail;
-	volatile unsigned char isFull;
+	volatile unsigned int isFull;
 	unsigned int blocks[BLOCK_COUNT] __attribute__ ((aligned (CACHE_LINE_SIZE)));
 	//unsigned char lots[BLOCK_COUNT] __attribute__ ((aligned (CACHE_LINE_SIZE)));
+	MemoryNode* volatile next __attribute__ ((aligned (CACHE_LINE_SIZE)));
+	volatile unsigned int head __attribute__ ((aligned (CACHE_LINE_SIZE)));
 
 public:
 	inline MemoryNode(MemoryNode* next);
@@ -52,14 +52,14 @@ public:
 
 class Memory {
 private:
-	MemoryNode* volatile dummy;
-	MemoryNode* volatile tail;
+	MemoryNode* volatile dummy __attribute__ ((aligned (CACHE_LINE_SIZE)));
+	MemoryNode* volatile tail __attribute__ ((aligned (CACHE_LINE_SIZE)));
 
-	MemoryNode* volatile dummyReserved;
-	MemoryNode* volatile tailReserved;
+	MemoryNode* volatile dummyReserved __attribute__ ((aligned (CACHE_LINE_SIZE)));
+	MemoryNode* volatile tailReserved __attribute__ ((aligned (CACHE_LINE_SIZE)));
 
 public:
-	Memory(unsigned int preAlllocatedSize = 1024 * 1024);
+	Memory(unsigned int preAlllocatedSize = 1024U * 1024U);
 	virtual ~Memory();
 
 	template<typename Type> void allocate(Type*& item);
@@ -73,7 +73,8 @@ private:
 };
 
 MemoryNode::MemoryNode(MemoryNode* next) :
-		next(next), head(0), tail(0), isFull(0U) {
+		tail(0), isFull(0U), next(next), head(0) {
+	ASSERT(BLOCK_SIZE == sizeof(blocks), "CRITICAL ERROR!");
 	bzero(blocks, sizeof(blocks));
 	//bzero(lots, sizeof(lots));
 	__sync_synchronize();

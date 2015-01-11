@@ -22,10 +22,10 @@ class Queue;
 template<typename Item>
 class QueueNode {
 private:
-	QueueNode<Item>* volatile next;
-	volatile unsigned int head;
 	volatile unsigned int tail;
-	Item* volatile items[ITEM_COUNT] __attribute__ ((aligned (CACHE_LINE_SIZE)));
+	Item* items[ITEM_COUNT] __attribute__ ((aligned (CACHE_LINE_SIZE)));
+	QueueNode<Item>* volatile next __attribute__ ((aligned (CACHE_LINE_SIZE)));
+	volatile unsigned int head __attribute__ ((aligned (CACHE_LINE_SIZE)));
 
 public:
 	inline QueueNode();
@@ -42,15 +42,14 @@ public:
 template<typename Item>
 class Queue {
 private:
-	//Memory memory;
 	QueueNode<Item>* volatile dummy;
-	QueueNode<Item>* volatile tail;
+	QueueNode<Item>* volatile tail __attribute__ ((aligned (CACHE_LINE_SIZE)));
 
-	QueueNode<Item>* volatile dummyReserved;
-	QueueNode<Item>* volatile tailReserved;
+	QueueNode<Item>* volatile dummyReserved __attribute__ ((aligned (CACHE_LINE_SIZE)));
+	QueueNode<Item>* volatile tailReserved __attribute__ ((aligned (CACHE_LINE_SIZE)));
 
 public:
-	Queue();
+	Queue(unsigned int preAllocatedNodeCount = 1024U);
 	virtual ~Queue();
 
 	void push(Item* item);
@@ -63,8 +62,9 @@ private:
 
 template<typename Item>
 QueueNode<Item>::QueueNode() :
-		next(0), head(0), tail(0) {
-	for (unsigned int i = 0; i < ITEM_COUNT; ++i) items[i] = 0;
+		tail(0), next(0), head(0) {
+	bzero(items, sizeof(items));
+	//for (unsigned int i = 0U; i < ITEM_COUNT; ++i) items[i] = 0;
 	__sync_synchronize();
 }
 
@@ -119,16 +119,20 @@ bool QueueNode<Item>::pop(Item*& item, bool& isFree) {
 
 template<typename Item>
 void QueueNode<Item>::reset() {
-	for (unsigned int i = 0; i < ITEM_COUNT; ++i) items[i] = 0;
+	bzero(items, sizeof(items));
+	//for (unsigned int i = 0U; i < ITEM_COUNT; ++i) items[i] = 0;
 	this->tail = 0;
 	this->head = 0;
 	this->next = 0;
 }
 
 template<typename Item>
-Queue<Item>::Queue() :
+Queue<Item>::Queue(unsigned int preAllocatedNodeCount) :
 		dummy(new QueueNode<Item>()), tail(dummy), dummyReserved(new QueueNode<Item>()), tailReserved(this->dummyReserved) {
-	__sync_synchronize();
+
+	Item item;
+	for (unsigned int i = 0U; i < preAllocatedNodeCount; ++i) this->push(&item);
+	while (this->pop());
 }
 
 template<typename Item>
