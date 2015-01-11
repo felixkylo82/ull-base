@@ -12,7 +12,7 @@
 
 #include <strings.h>
 
-#define CACHE_LINE_COUNT_QUEUE_NODE 128U
+#define CACHE_LINE_COUNT_QUEUE_NODE 512U
 
 static const unsigned int ITEM_COUNT = CACHE_LINE_COUNT_QUEUE_NODE * CACHE_LINE_SIZE / sizeof(void*);
 
@@ -49,7 +49,7 @@ private:
 	QueueNode<Item>* volatile tailReserved __attribute__ ((aligned (CACHE_LINE_SIZE)));
 
 public:
-	Queue(unsigned int preAllocatedNodeCount = 1024U);
+	Queue(unsigned int preAllocatedNodeCount = 1U);
 	virtual ~Queue();
 
 	void push(Item* item);

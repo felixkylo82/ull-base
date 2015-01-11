@@ -13,7 +13,7 @@
 #include <strings.h>
 #include <new>
 
-#define CACHE_LINE_COUNT_MEMORY_NODE 128U
+#define CACHE_LINE_COUNT_MEMORY_NODE 512U
 
 static const unsigned int BLOCK_SIZE = CACHE_LINE_COUNT_MEMORY_NODE * CACHE_LINE_SIZE;
 static const unsigned int BLOCK_COUNT = BLOCK_SIZE / sizeof(unsigned int);
