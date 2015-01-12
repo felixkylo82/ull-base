@@ -9,6 +9,7 @@
 #define INC_MEMORY_H_
 
 #include "common.h"
+//#undef SISO
 
 #include <strings.h>
 #include <new>
@@ -98,9 +99,9 @@ bool MemoryNode::allocate(unsigned int*& _address, unsigned int size) {
 			return false;
 		}
 
-#ifndef SISO
 		if (this->isFull)
 			return false;
+#ifndef SISO
 		__sync_synchronize();
 		if (this->isFull)
 			return false;
@@ -245,15 +246,19 @@ void Memory::allocate(Type*& data) {
 			tailNew = this->popReserved();
 			tailNew->allocate(address, sizeof(Type));
 		}
-		if (__sync_bool_compare_and_swap(&tailOld->next, 0, tailNew)) {
 #ifndef SISO
+		if (__sync_bool_compare_and_swap(&tailOld->next, 0, tailNew)) {
 			__sync_bool_compare_and_swap(&this->tail, tailOld, tailNew);
-#else
-			this->tail = tailNew;
-#endif
 			data = new (address) Type();
 			return;
 		}
+#else
+		tailOld->next = tailNew;
+		__sync_synchronize();
+		this->tail = tailNew;
+		data = new (address) Type();
+		return;
+#endif
 	}
 }
 
@@ -314,17 +319,26 @@ void Memory::pushReserved(MemoryNode*& tailNew) {
 
 	while (true) {
 		MemoryNode* tailOld = this->tailReserved;
+#ifndef SISO
 		while (tailOld->next) {
 			__sync_bool_compare_and_swap(&this->tailReserved, tailOld, tailOld->next);
 			tailOld = this->tailReserved;
 		}
+#endif
 
+#ifndef SISO
 		if (__sync_bool_compare_and_swap(&tailOld->next, 0, tailNew)) {
 			__sync_bool_compare_and_swap(&this->tailReserved, tailOld, tailNew);
-			this->tailReserved = tailNew;
 			tailNew = 0;
 			return;
 		}
+#else
+		tailOld->next = tailNew;
+		__sync_synchronize();
+		this->tailReserved = tailNew;
+		tailNew = 0;
+		return;
+#endif
 	}
 }
 

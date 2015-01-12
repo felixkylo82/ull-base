@@ -197,14 +197,17 @@ void Queue<Item>::push(Item* item) {
 			tailNew = this->popReserved();
 			tailNew->push(item);
 		}
-		if (__sync_bool_compare_and_swap(&tailOld->next, 0, tailNew)) {
 #ifndef SISO
+		if (__sync_bool_compare_and_swap(&tailOld->next, 0, tailNew)) {
 			__sync_bool_compare_and_swap(&this->tail, tailOld, tailNew);
-#else
-			this->tail = tailNew;
-#endif
 			return;
 		}
+#else
+		tailOld->next = tailNew;
+		__sync_synchronize();
+		this->tail = tailNew;
+		return;
+#endif
 	}
 }
 
@@ -249,16 +252,26 @@ void Queue<Item>::pushReserved(QueueNode<Item>*& tailNew) {
 
 	while (true) {
 		QueueNode<Item>* tailOld = this->tailReserved;
+#ifndef SISO
 		while (tailOld->next) {
 			__sync_bool_compare_and_swap(&this->tailReserved, tailOld, tailOld->next);
 			tailOld = this->tailReserved;
 		}
+#endif
 
+#ifndef SISO
 		if (__sync_bool_compare_and_swap(&tailOld->next, 0, tailNew)) {
 			__sync_bool_compare_and_swap(&this->tailReserved, tailOld, tailNew);
 			tailNew = 0;
 			return;
 		}
+#else
+		tailOld->next = tailNew;
+		__sync_synchronize();
+		this->tailReserved = tailNew;
+		tailNew = 0;
+		return;
+#endif
 	}
 }
 
