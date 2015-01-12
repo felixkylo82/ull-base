@@ -180,10 +180,12 @@ void Queue<Item>::push(Item* item) {
 	QueueNode<Item>* tailNew = 0;
 	while (true) {
 		QueueNode<Item>* tailOld = this->tail;
+#ifndef SISO
 		while (tailOld->next) {
 			__sync_bool_compare_and_swap(&this->tail, tailOld, tailOld->next);
 			tailOld = this->tail;
 		}
+#endif
 
 		if (dummy != tailOld && tailOld->push(item)) {
 			if (tailNew)
