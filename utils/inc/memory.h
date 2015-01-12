@@ -139,7 +139,7 @@ bool MemoryNode::deallocate(unsigned int*& _address) {
 	}
 #else
 	if (this->head != address)
-		ASSERT(false, "unordered deallocations are not supported");
+		ASSERT(false, "unordered deallocations are not supported")
 	else
 		this->head = info->next;
 #endif
@@ -276,7 +276,7 @@ void Memory::deallocate(Type*& data) {
 			dummy = this->dummy;
 			headOld = dummy->next;
 			if (!headOld) {
-				ASSERT(false, "unordered deallocations are not supported");
+				ASSERT(false, "unordered deallocations are not supported")
 				return;
 			}
 		}
@@ -314,19 +314,14 @@ void Memory::pushReserved(MemoryNode*& tailNew) {
 
 	while (true) {
 		MemoryNode* tailOld = this->tailReserved;
-#ifndef SISO
 		while (tailOld->next) {
 			__sync_bool_compare_and_swap(&this->tailReserved, tailOld, tailOld->next);
 			tailOld = this->tailReserved;
 		}
-#endif
 
 		if (__sync_bool_compare_and_swap(&tailOld->next, 0, tailNew)) {
-#ifndef SISO
 			__sync_bool_compare_and_swap(&this->tailReserved, tailOld, tailNew);
-#else
 			this->tailReserved = tailNew;
-#endif
 			tailNew = 0;
 			return;
 		}

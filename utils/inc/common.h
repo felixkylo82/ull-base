@@ -20,7 +20,7 @@
 #else	/* DEBUG */
 
 #include <cstdio>
-#define ASSERT(X, MSG) if(!X) fprintf(stderr, MSG);
+#define ASSERT(X, MSG) {if(!X) fprintf(stderr, MSG);}
 
 #endif	/* DEBUG */
 

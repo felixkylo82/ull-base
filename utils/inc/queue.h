@@ -122,7 +122,7 @@ bool QueueNode<Item>::pop(Item*& item, bool& isFree) {
 			return true;
 		}
 #else
-		this->head += 2U;
+		this->head = headOld + 2U;
 		item = items[headOld / 2U];
 		return true;
 #endif
@@ -253,11 +253,7 @@ void Queue<Item>::pushReserved(QueueNode<Item>*& tailNew) {
 		}
 
 		if (__sync_bool_compare_and_swap(&tailOld->next, 0, tailNew)) {
-#ifndef SISO
 			__sync_bool_compare_and_swap(&this->tailReserved, tailOld, tailNew);
-#else
-			this->tailReserved = tailNew;
-#endif
 			tailNew = 0;
 			return;
 		}
