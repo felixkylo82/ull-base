@@ -8,6 +8,7 @@
 #ifndef COMMON_H_
 #define COMMON_H_
 
+#define SISO
 #define CACHE_LINE_SIZE 64U
 #define MAX_ALIGNMENT 8U
 

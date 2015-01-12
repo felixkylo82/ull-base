@@ -98,12 +98,15 @@ bool MemoryNode::allocate(unsigned int*& _address, unsigned int size) {
 			return false;
 		}
 
+#ifndef SISO
 		if (this->isFull)
 			return false;
 		__sync_synchronize();
 		if (this->isFull)
 			return false;
+#endif
 
+#ifndef SISO
 		if (__sync_bool_compare_and_swap(&this->tail, tailOld, tailOld + count)) {
 			Info* info = (Info*) (blocks + tailOld);
 			info->next = this->tail;
@@ -111,6 +114,14 @@ bool MemoryNode::allocate(unsigned int*& _address, unsigned int size) {
 			_address = blocks + tailOld + INFO_COUNT;
 			return true;
 		}
+#else
+		__sync_fetch_and_add(&this->tail, count);
+		Info* info = (Info*) (blocks + tailOld);
+		info->next = this->tail;
+		//lots[tailOld] = 1U;
+		_address = blocks + tailOld + INFO_COUNT;
+		return true;
+#endif
 	}
 }
 
@@ -122,9 +133,16 @@ bool MemoryNode::deallocate(unsigned int*& _address) {
 	}
 
 	Info* info = ((Info*) (blocks + address));
+#ifndef SISO
 	if (!__sync_bool_compare_and_swap(&this->head, address, info->next)) {
 		ASSERT(false, "unordered deallocations are not supported");
 	}
+#else
+	if (this->head != address)
+		ASSERT(false, "unordered deallocations are not supported");
+	else
+		this->head = info->next;
+#endif
 	return true;
 }
 
@@ -208,11 +226,12 @@ void Memory::allocate(Type*& data) {
 
 	while (true) {
 		MemoryNode* tailOld = this->tail;
-
+#ifndef SISO
 		while (tailOld->next) {
 			__sync_bool_compare_and_swap(&this->tail, tailOld, tailOld->next);
 			tailOld = this->tail;
 		}
+#endif
 
 		if (tailOld->allocate(address, sizeof(Type))) {
 			if (tailNew) {
@@ -227,7 +246,11 @@ void Memory::allocate(Type*& data) {
 			tailNew->allocate(address, sizeof(Type));
 		}
 		if (__sync_bool_compare_and_swap(&tailOld->next, 0, tailNew)) {
+#ifndef SISO
 			__sync_bool_compare_and_swap(&this->tail, tailOld, tailNew);
+#else
+			this->tail = tailNew;
+#endif
 			data = new (address) Type();
 			return;
 		}
@@ -275,9 +298,14 @@ void Memory::deallocateHelper(MemoryNode* dummy, MemoryNode* headOld) {
 			return;
 	}
 
+#ifndef SISO
 	if (__sync_bool_compare_and_swap(&this->dummy, dummy, headOld)) {
 		this->pushReserved(dummy);
 	}
+#else
+	this->dummy = headOld;
+	this->pushReserved(dummy);
+#endif
 }
 
 void Memory::pushReserved(MemoryNode*& tailNew) {
@@ -286,13 +314,19 @@ void Memory::pushReserved(MemoryNode*& tailNew) {
 
 	while (true) {
 		MemoryNode* tailOld = this->tailReserved;
+#ifndef SISO
 		while (tailOld->next) {
 			__sync_bool_compare_and_swap(&this->tailReserved, tailOld, tailOld->next);
 			tailOld = this->tailReserved;
 		}
+#endif
 
 		if (__sync_bool_compare_and_swap(&tailOld->next, 0, tailNew)) {
+#ifndef SISO
 			__sync_bool_compare_and_swap(&this->tailReserved, tailOld, tailNew);
+#else
+			this->tailReserved = tailNew;
+#endif
 			tailNew = 0;
 			return;
 		}
@@ -311,10 +345,16 @@ MemoryNode* Memory::popReserved() {
 				return new MemoryNode(0);
 		}
 
+#ifndef SISO
 		if (__sync_bool_compare_and_swap(&this->dummyReserved, dummyReserved, headOld)) {
 			dummyReserved->reset();
 			return dummyReserved;
 		}
+#else
+		this->dummyReserved = headOld;
+		dummyReserved->reset();
+		return dummyReserved;
+#endif
 	}
 }
 

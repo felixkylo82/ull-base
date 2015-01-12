@@ -82,11 +82,17 @@ bool QueueNode<Item>::push(Item* item) {
 			return false;
 		}
 
-		if (0 == tailOld % 2U && __sync_bool_compare_and_swap(&this->tail, tailOld, tailOld + 1)) {
+#ifndef SISO
+		if (0 == tailOld % 2U && __sync_bool_compare_and_swap(&this->tail, tailOld, tailOld + 1U)) {
 			items[tailOld / 2U] = item;
-			__sync_fetch_and_add(&this->tail, 1);
+			__sync_fetch_and_add(&this->tail, 1U);
 			return true;
 		}
+#else
+		items[tailOld / 2U] = item;
+		__sync_fetch_and_add(&this->tail, 2U);
+		return true;
+#endif
 	}
 }
 
@@ -97,23 +103,29 @@ bool QueueNode<Item>::pop(Item*& item, bool& isFree) {
 
 	while (true) {
 		unsigned int headOld = this->head;
-		if (ITEM_COUNT * 2U <= headOld + 1) {
+		if (ITEM_COUNT * 2U <= headOld + 1U) {
 			isFree = true;
 			return false;
 		}
 
-		if (this->tail <= headOld + 1) {
+		if (this->tail <= headOld + 1U) {
 			__sync_synchronize();
 			headOld = this->head;
-			if (this->tail <= headOld + 1) {
+			if (this->tail <= headOld + 1U) {
 				return false;
 			}
 		}
 
+#ifndef SISO
 		if (__sync_bool_compare_and_swap(&this->head, headOld, headOld + 2U)) {
 			item = items[headOld / 2U];
 			return true;
 		}
+#else
+		this->head += 2U;
+		item = items[headOld / 2U];
+		return true;
+#endif
 	}
 }
 
@@ -184,7 +196,11 @@ void Queue<Item>::push(Item* item) {
 			tailNew->push(item);
 		}
 		if (__sync_bool_compare_and_swap(&tailOld->next, 0, tailNew)) {
+#ifndef SISO
 			__sync_bool_compare_and_swap(&this->tail, tailOld, tailNew);
+#else
+			this->tail = tailNew;
+#endif
 			return;
 		}
 	}
@@ -201,6 +217,7 @@ Item* Queue<Item>::pop() {
 			headOld = dummy->next;
 			if (headOld == 0)
 				return 0;
+			return 0;
 		}
 
 		Item* item;
@@ -213,8 +230,13 @@ Item* Queue<Item>::pop() {
 			return 0;
 		}
 
+#ifndef SISO
 		if (__sync_bool_compare_and_swap(&this->dummy, dummy, headOld))
 			this->pushReserved(dummy);
+#else
+		this->dummy = headOld;
+		this->pushReserved(dummy);
+#endif
 	}
 }
 
@@ -231,7 +253,11 @@ void Queue<Item>::pushReserved(QueueNode<Item>*& tailNew) {
 		}
 
 		if (__sync_bool_compare_and_swap(&tailOld->next, 0, tailNew)) {
+#ifndef SISO
 			__sync_bool_compare_and_swap(&this->tailReserved, tailOld, tailNew);
+#else
+			this->tailReserved = tailNew;
+#endif
 			tailNew = 0;
 			return;
 		}
@@ -251,10 +277,16 @@ QueueNode<Item>* Queue<Item>::popReserved() {
 				return new QueueNode<Item>();
 		}
 
+#ifndef SISO
 		if (__sync_bool_compare_and_swap(&this->dummyReserved, dummyReserved, headOld)) {
 			dummyReserved->reset();
 			return dummyReserved;
 		}
+#else
+		this->dummyReserved = headOld;
+		dummyReserved->reset();
+		return dummyReserved;
+#endif
 	}
 }
 
