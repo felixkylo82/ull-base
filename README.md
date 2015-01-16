@@ -10,4 +10,4 @@ Memory is a list of memory nodes and each node has memory blocks where the overa
 
 Queue is also a list of nodes and each node has an array of pointers to the data segment. The same mechanism for the insertion and the reservation of nodes applies.
 
-Experimental results, performed in an intel i3 machine, show that the latency imposed to only 1/1,000,000 messages <= 100us at data rate = 1,000,000 messages per second. 
+Experimental results, performed on an intel i3 machine, show that the latency imposed to only 1/1,000,000 messages <= 100us at data rate = 1,000,000 messages per second. 
