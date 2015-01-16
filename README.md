@@ -4,7 +4,7 @@ Very often, when a system receives a request, the request is queued before it is
 
 To address this problem, ull-base assumes a single thread enqueues(/produces) messages and a single thread dequeue(/consumes) messages. The order of memory allocation of messages is always the same as the order of memory deallocation of messages. In other words, a thread allocates a buffer, receives messages from the network and enqueues the messages. Another thread dequeues the meesages, processes the messages and then deallocates the messages.
 
-ull-base consists of two templates classes, Memory and Queue.
+ull-base consists of two C++ template classes, Memory and Queue.
 
 Memory is a list of memory nodes and each node has memory blocks where the overall size is the multiples of the size of a cache line. During allocation, to ensure proper memory alignments, memory segment will be enlarged a little bit so that its size become the multiples of 8 bytes. When the memory node is full, a new node is created. On the other hand, when the memory node is free, the node is kept in another list.
 
