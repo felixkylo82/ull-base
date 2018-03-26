@@ -1,6 +1,8 @@
 # ull-base
 
-Very often, when a system receives a request, the request is queued before it is processed. However, queuing imposes significant latency. In low latency systems, the queue performance becomes critical. Taking market data dispatches as an example, moldudp64 is a udp protocol employed by NASDAQ exchange. Under this protocol, messages contain sequence numbers so that they can be retransmitted, via recovery mechanisms, on requests. Retransmission can impose latency more than 10ms. To avoid buffer overflow and to minimize message loss, messages have to be queued immediately after arrival. Meanwhile, latency imposed should be as little as possible.
+Very often, when a system receives a request, the request is queued before it is processed. However, queuing imposes significant latency. In low latency systems, the queue performance becomes critical. To avoid buffer overflow and to minimize message loss, messages have to be queued immediately after arrival. Meanwhile, latency imposed should be as little as possible.
+
+Taking market data dispatches as an example, moldudp64 is a udp protocol employed by NASDAQ exchange. Under this protocol, messages contain sequence numbers so that when they are lost, they can be retransmitted via a certain recovery mechanism on requests. However, retransmission may impose latency more than 10ms.
 
 To address this problem, ull-base assumes a single thread enqueues(/produces) messages and a single thread dequeue(/consumes) messages. The order of memory allocation of messages is always the same as the order of memory deallocation of messages. In other words, a thread allocates a buffer, receives messages from the network and enqueues the messages. Another thread dequeues the meesages, processes the messages and then deallocates the messages.
 
@@ -10,4 +12,4 @@ Memory is a list of memory nodes and each node has memory blocks where the overa
 
 Queue is also a list of nodes and each node has an array of pointers to the data segment. The same mechanism for the insertion and the reservation of nodes applies.
 
-Experimental results, performed on an intel i3 machine, show that, at data rate = 1,000,000 messages per second, only 1/1,000,000 messages to which the latency is imposed >= 100us. 
+Experimental results, performed on an intel i3 machine, show that, at data rate = 1,000,000 messages per second, only 1/1,000,000 messages to which the imposed latency is >= 100us. 
